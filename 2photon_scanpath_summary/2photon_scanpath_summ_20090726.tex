@@ -1,0 +1,142 @@
+\documentclass{article}
+
+\begin{document}
+
+
+
+\centerline{\sc \large 2 photon microscope scanpath generation and image processing}
+\vspace{.5pc}
+\today
+\centerline{\sc Robert Chen}
+%\centerline{\it (Read the .tex file along with this or it won't 
+ %           make much sense)}
+\vspace{2pc}
+
+Currently most two-photon microscopes use the simple raster scan (scan back
+and forth one line at a time) method to scan an image.  This method is well 
+suited for imaging wide cell populations, it performs an entire scan in the 
+scope's field of view in 1-2 minutes. The drawback of the raster scan method 
+is that it takes a long time to scan an image, and does not allow for targeted
+scanning of regions of interest (individual cells).   
+
+We propose a method which allows for fast targeted scanning of individual regions of interest, as applied to the scanning
+of individual neuron soma in a cortical slice.  The following method involves an initial raster scan of the entire field of
+view, followed by an image recognition feature to detect regions of interest within the field of view. Next the regions of
+interest are used to generate an intelligent scanning path connecting all regions of interst, creating an efficient scan 
+path that allows the laser to target all regions of interest while traveling a minimal total distance through all of the 
+regions.  This method allows us to maximize the amount of time imaging the regions of interest while minimizing the amount of 
+time the scanner travels in between target regions.  Finally we incorporate a method to adjust the scanpath in response
+to changes in the locations of regions of interest (perturbations of the cortical tissue, drifting of the focal view due to 
+expansion of material in the scope).
+
+\section{Method}
+
+(see figure \ref{fig:methodOutline}) 
+\begin{enumerate}
+  \item Raster scan is performed for the entire field of view.\vspace{-2mm}%
+  \item Cells detected.  Cells are indexed according to the centroid of the cells regions.\vspace{-2mm}%
+  \item Calculate most efficient scan path which connects all cell centers.\vspace{-2mm}%
+  \item Generate coordinates of the field of view which the scan path travels through.\vspace{-2mm}%
+  \item Iterate through the following: (i) scan area with the calculated scanpath (ii) raster scan entire region every $t$ 
+        change in time, detect cells, update scanpath based on new location of cells.%\vspace{-2mm}%
+\end{enumerate}
+
+\begin{figure}[htbp]
+%%FIGURE HERE
+
+\caption{Method Outline / Flow Chart}
+\label{fig:methodOutline}
+\end{figure}
+
+
+\subsection{Calcium 2-photon microscope}
+Two channels are used for imaging, the red channel and the green channel.  During preparation of the in vivo imaging, 
+the red dye is injected into the cortical tissue. Red dye is absorbed by the itercellular space (ie. astrocytes, CSF, etc).
+Green dye is injected afterwards and is absorbed by the soma of the neurons.
+
+\subsection{Cell Detection Algorithm}
+A cell detection algorithm is used to locate the centers of cells in an image.  The images from both the red channel and green
+channel are converted into numerical matrices.  For our purpose we scan n frames (n = 34) from both channels.  The mean intensity
+of the red frame (R) and the green (G) frame are taken. 
+\begin{equation}
+P = \frac{1}{n}\sum_{i=1}^{n}G_i-R_i.
+\end{equation}
+
+Next, P is filtered via the laplacian of the gaussian filter, in order to reduce the noise in the image. Afterwards the cells
+are detected as the local maxima of the filtered image.
+
+
+\subsection{Intelligent Scanpath}
+A genetic algorithm is used to calculate the most efficient path through the set of points in two-dimensional space that 
+are denoted by the cell centers that are detected in the previous step.  
+
+\subsection{Conversion to coordinates for 2 photon}
+
+
+Variation of algorithm from Lillis et. al. \cite{lillis}  With this algorithm, the scanner scans the entire cell, starting from one side and exiting at the opposite end.  While scanning 
+inside a cell, the scanner moves slowly; while scanning between cells, the scanner accelerates, and slows down once it reaches the border of the next cell. 
+(Figure \ref{fig:genpathOutput}).
+
+A set of coordinates (locations) is generated, which represents the location on the field of view where the scanner will be for every interval $t$ time.  
+Currently the algorithm generates a scanpath that can be scanned at 91.1079 Hz (default in Lillis et. al). \cite{lillis} The sample frequency $f_s$ is 125000 Hz,
+while the sample period $dt = 1/f_s = 1/125000 = 8.0e-6$ seconds per pixel that is sampled.  The sample frequency and sample period refer to the time 
+when the scanning is done inside cells.   
+
+
+\begin{figure}[bp]
+\begin{center}
+\includegraphics[width=0.8\textwidth]{genpathxPosxVeloc30cells.eps}
+\end{center}
+\caption{Top: The calculated scanning path.  Area in red indicates time spent inside of a cell, area in blue indicates scanning between cells.  Middle: The x position of the scanning path
+     Bottom: The x velocity of the scanning path.  Spikes indicate time spent between cells, when the scanner is accelerating from one cell to the next.}
+\label{fig:genpathOutput}
+
+\end{figure}
+
+
+\subsection{Updating scanpath in response to change in cell location}
+We have observed that there is a drift in the field of view for the microscope that occurs gradually over time.  This would occur for example when 
+scanning the same area of brain tissue over a period of 30 minutes.  The rate of drift would be about $p$ pixels per second (see figure ref{fig:driftExample}).  
+
+To account for the drift in the field of view, the scanpath will be updated every $time_{seconds}$ (seconds?) change in time. It is likely that the position of the cells will have shifted some distance,
+relative to the field of view in the previous time point.  
+
+We iterate through the following process for each new time point (each change in $time_{seconds}$.  
+
+First, the cell detection algorithm is run, to locate the position of the cells.  Next the centroid of 
+all $n$ cell locations is computed.  
+Next let $P_t$ be the set of $n$ points that are present in the previous time point, and $P_{t-1}$ be the set of $n$ points that are in the current time point.  
+\begin{equation}
+C_t(x,y) = \frac{1}{n}\sum_{i=1}^{n}P_{(t,i)}(x_i, y_i).
+\end{equation}
+
+Let  
+\begin{displaymath}
+dC = C_t - C_{t-1}
+\end{displaymath}
+be the Euclidean distance change in centroid from previous time point to the current time point.  
+
+Next, let $S = P_{t-1} + dC$ be the set of points in the previous time point, transformed by factor $dC$.  Now, we have shifted the points from the previous time point to the same field
+of view as the current time point.  We will now locate the nearest points in set $P_t$ that correspond to set $S$, which is denoted by $M$.  If no point in set $P_t$ is found that is a distance
+$d$ away from the corresponding point in $S$, $d$ being the average radius of a cell, then the corresponding point in $M$ is set equal to the transformed point in $S$.  
+
+Now, $M$ will contain the set of points corresponding to the new location of cells in the current time point, in the same order as in $P_{t-1}$.  We then re-calculate the scanpath coordinates
+based on these new locations of the cells.  (note: do not perform search for intelligent scanpath again - cells already in correct order).  
+
+
+\section{Test case on 2-photon images}
+
+Show a test case?
+\\
+\\
+\\
+
+
+
+
+
+\bibliographystyle{amsplain}
+\bibliography{reflist}
+
+
+\end{document}
